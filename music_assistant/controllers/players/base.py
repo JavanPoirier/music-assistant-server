@@ -37,7 +37,7 @@ from music_assistant.models.player import Player, PlayerState
 if TYPE_CHECKING:
     import asyncio
     import weakref
-    from collections.abc import Callable, Iterable, Iterator
+    from collections.abc import Callable, Collection, Iterable, Iterator
     from contextlib import AbstractAsyncContextManager, AbstractContextManager
 
     from music_assistant_models.config_entries import PlayerConfig
@@ -705,6 +705,7 @@ class _PlayerControllerBase(CoreController):
             identity: DeviceIdentity,
             player_id: str,
             attached_only: bool = False,
+            replaced_id: str | None = None,
         ) -> bool: ...
         def _attach_role(self, protocol: PlayerProtocol, player_id: str) -> ProtocolRole: ...
         async def _attach_in_changed_roles(self, player: Player) -> None: ...
@@ -717,7 +718,7 @@ class _PlayerControllerBase(CoreController):
         def _identity_parts(
             self,
             player_id: str,
-            exclude_protocol_id: str | None = None,
+            exclude_protocol_ids: Collection[str] = (),
             attached_only: bool = False,
         ) -> list[DeviceIdentity]: ...
         def _merged_identity(self, player_id: str) -> DeviceIdentity: ...

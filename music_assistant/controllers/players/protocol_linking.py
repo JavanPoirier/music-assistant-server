@@ -52,6 +52,8 @@ from music_assistant.models.player import OWN_PROTOCOL_ROLES, Player, get_device
 from .base import _PlayerControllerBase
 
 if TYPE_CHECKING:
+    from collections.abc import Collection, Iterable
+
     from music_assistant.models.player_protocol import PlayerProtocol
 
 # How long an audio protocol that matches no player waits for the identifiers that tell
@@ -119,11 +121,19 @@ class ProtocolLinkingMixin(_PlayerControllerBase):
             key=lambda player_id: self._get_replaced_protocol_id(protocol, player_id) is None,
         )
         for player_id in candidates:
-            if not self._can_attach_to(protocol, identity, player_id):
+            replaced_id = self._get_replaced_protocol_id(protocol, player_id)
+            # a receiver that makes up its id at every start is only known by its name
+            # and its host: the id it had then rules nothing out
+            returning = replaced_id is not None and self._returns_under_new_id(
+                protocol, identity, replaced_id
+            )
+            if not self._can_attach_to(
+                protocol, identity, player_id, replaced_id=replaced_id if returning else None
+            ):
                 continue
-            if not matches_device(identity, self._identity_parts(player_id)):
+            if not returning and not matches_device(identity, self._identity_parts(player_id)):
                 continue
-            if replaced_id := self._get_replaced_protocol_id(protocol, player_id):
+            if replaced_id:
                 self._take_over_protocol_record(replaced_id, protocol_id, player_id)
             return player_id
         return None
@@ -170,6 +180,7 @@ class ProtocolLinkingMixin(_PlayerControllerBase):
         identity: DeviceIdentity,
         player_id: str,
         attached_only: bool = False,
+        replaced_id: str | None = None,
     ) -> bool:
         """
         Return whether the attach rules allow a protocol on a player.
@@ -185,6 +196,8 @@ class ProtocolLinkingMixin(_PlayerControllerBase):
         :param player_id: Id of the player.
         :param attached_only: Only the protocols that are attached to the player count,
             for a protocol that was attached to the player before.
+        :param replaced_id: Id of a protocol of the player that is away and that the
+            protocol takes the place of: what it reported rules nothing out.
         """
         if player_id in self._removing:
             return False
@@ -221,8 +234,9 @@ class ProtocolLinkingMixin(_PlayerControllerBase):
                 and _native_rank(other_provider) == _native_rank(protocol.provider_id)
             ):
                 return False
+        excluded = {protocol_id} if replaced_id is None else {protocol_id, replaced_id}
         return not vetoes_device(
-            identity, self._identity_parts(player_id, protocol_id, attached_only=attached_only)
+            identity, self._identity_parts(player_id, excluded, attached_only=attached_only)
         )
 
     def _attach_role(self, protocol: PlayerProtocol, player_id: str) -> ProtocolRole:
@@ -294,6 +308,33 @@ class ProtocolLinkingMixin(_PlayerControllerBase):
             if other_record.get("provider") == protocol.provider_id:
                 return other_id
         return None
+
+    def _returns_under_new_id(
+        self, protocol: PlayerProtocol, identity: DeviceIdentity, replaced_id: str
+    ) -> bool:
+        """
+        Return whether a protocol is the device of a protocol that is away, under a new id.
+
+        Some receivers (e.g. the AirPlay app of an Android TV) make up a new random id
+        each time they start, so no id they report is the one they had. It is that device
+        when it has the name it had, and a MAC address or the IP address it had.
+
+        :param protocol: The protocol that attaches.
+        :param identity: What the protocol reports about its device.
+        :param replaced_id: Id of the protocol that is away.
+        """
+        record = self.mass.config.get_protocol_record(replaced_id) or {}
+        if not protocol.name or record.get("default_name") != protocol.name:
+            return False
+        values = record.get("values") or {}
+        stored = [
+            (IdentifierType(identifier_type), str(value))
+            for identifier_type, value in values.get(CONF_PROTOCOL_IDENTIFIERS) or ()
+        ]
+        for mac_address in (values.get(CONF_CACHED_ARP_MAC), values.get(CONF_REPORTED_MAC)):
+            if mac_address:
+                stored.append((IdentifierType.MAC_ADDRESS, str(mac_address)))
+        return not _addresses(stored).isdisjoint(_addresses(identity.identifiers))
 
     def _link_applies(self, protocol: PlayerProtocol | None, player_id: str | None) -> bool:
         """
@@ -386,7 +427,10 @@ class ProtocolLinkingMixin(_PlayerControllerBase):
         )
 
     def _identity_parts(
-        self, player_id: str, exclude_protocol_id: str | None = None, attached_only: bool = False
+        self,
+        player_id: str,
+        exclude_protocol_ids: Collection[str] = (),
+        attached_only: bool = False,
     ) -> list[DeviceIdentity]:
         """
         Return what is known about the device of a player, per protocol that reported it.
@@ -396,13 +440,13 @@ class ProtocolLinkingMixin(_PlayerControllerBase):
         again to another device while this one is away.
 
         :param player_id: Id of the player.
-        :param exclude_protocol_id: Id of a protocol of the player to leave out.
+        :param exclude_protocol_ids: Ids of protocols of the player to leave out.
         :param attached_only: Leave out what the protocols that are away reported.
         """
         parts: list[DeviceIdentity] = []
         domains: set[str] = set()
         for protocol_id in self._get_protocol_ids(player_id):
-            if protocol_id == exclude_protocol_id:
+            if protocol_id in exclude_protocol_ids:
                 continue
             if protocol := self._protocols.get(protocol_id):
                 parts.append(self._identity_of(protocol))
@@ -761,6 +805,17 @@ class ProtocolLinkingMixin(_PlayerControllerBase):
         """
         await protocol.on_config_updated()
         protocol.update_state(force_update=True)
+
+
+def _addresses(identifiers: Iterable[tuple[IdentifierType, str]]) -> set[str]:
+    """Return the usable MAC and IP addresses among identifiers, in one comparable form."""
+    addresses: set[str] = set()
+    for identifier_type, value in identifiers:
+        if identifier_type == IdentifierType.IP_ADDRESS:
+            addresses.add(value)
+        elif identifier_type == IdentifierType.MAC_ADDRESS and is_valid_mac_address(value):
+            addresses.add(value.lower().replace(":", "").replace("-", ""))
+    return addresses
 
 
 def _native_rank(provider_id: str) -> int:

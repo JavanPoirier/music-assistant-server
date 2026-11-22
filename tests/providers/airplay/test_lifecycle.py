@@ -283,6 +283,55 @@ async def test_two_receivers_on_one_host_stay_two_players(
     assert _player_of(first) is not _player_of(second)
 
 
+async def test_a_receiver_with_a_new_random_id_at_every_start_stays_one_player(
+    scenario: Scenario, provider: AirPlayProvider
+) -> None:
+    """
+    A receiver that makes up its device id at every start comes back to its own player.
+
+    The AirPlay app of an Android TV does so: the ids it advertises are random, some of
+    them look like a hardware MAC address, and none is the id it had before.
+    """
+    scenario.arp[ADDRESS] = "48:7E:48:47:2D:2E"
+    tv = "Android TV"
+    first = await _announce(scenario, provider, _service(tv, "E5:A2:0E:0E:40:6C"))
+    player_id = _player_of(first).player_id
+    await _announce(
+        scenario, provider, _service(tv, "E5:A2:0E:0E:40:6C"), ServiceStateChange.Removed
+    )
+
+    second = await _announce(scenario, provider, _service(tv, "DB:29:BF:A2:0D:EB"))
+    assert _player_of(second).player_id == player_id
+    await _announce(
+        scenario, provider, _service(tv, "DB:29:BF:A2:0D:EB"), ServiceStateChange.Removed
+    )
+    third = await _announce(scenario, provider, _service(tv, "10:BA:7C:1B:92:8C"))
+
+    assert _player_of(third).player_id == player_id
+    assert [config.player_id for config in await scenario.player_configs()] == [player_id]
+    config = scenario.mass.config
+    assert config.get_protocol_record("ape5a20e0e406c") is None
+    assert config.get_protocol_record("apdb29bfa20deb") is None
+    assert config.get_protocol_ids_of_player(player_id) == ["ap10ba7c1b928c"]
+
+
+async def test_a_new_receiver_of_another_name_on_the_host_of_one_that_is_away_is_new(
+    scenario: Scenario, provider: AirPlayProvider
+) -> None:
+    """Only a receiver with the name of the one that is away takes its place."""
+    scenario.arp[ADDRESS] = "00:11:22:33:44:01"
+    first = await _announce(scenario, provider, _service("Zone A", "0A:11:22:33:44:0A"))
+    player_id = _player_of(first).player_id
+    await _announce(
+        scenario, provider, _service("Zone A", "0A:11:22:33:44:0A"), ServiceStateChange.Removed
+    )
+
+    other = await _announce(scenario, provider, _service("Zone B", "0A:11:22:33:44:0B"))
+
+    assert _player_of(other).player_id != player_id
+    assert scenario.mass.config.get_protocol_record("ap0a112233440a") is not None
+
+
 async def test_a_rejected_password_is_published_to_clients(
     scenario: Scenario, provider: AirPlayProvider
 ) -> None:
