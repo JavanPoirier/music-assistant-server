@@ -336,6 +336,23 @@ class ProtocolLinkingMixin(_PlayerControllerBase):
                 stored.append((IdentifierType.MAC_ADDRESS, str(mac_address)))
         return not _addresses(stored).isdisjoint(_addresses(identity.identifiers))
 
+    def _may_return_under_new_id(self, protocol: PlayerProtocol) -> bool:
+        """
+        Return whether a new protocol may be a device that is away, under a new id.
+
+        That is while a protocol of its provider with its name is away.
+
+        :param protocol: The protocol that attaches.
+        """
+        config = self.mass.config
+        if not protocol.name or config.get_protocol_record(protocol.protocol_id) is not None:
+            return False
+        return any(
+            other_id not in self._protocols
+            and (config.get_protocol_record(other_id) or {}).get("default_name") == protocol.name
+            for other_id in config.get_protocol_ids_of_provider(protocol.provider_id)
+        )
+
     def _link_applies(self, protocol: PlayerProtocol | None, player_id: str | None) -> bool:
         """
         Return whether the stored link of a protocol to a player governs the protocol.

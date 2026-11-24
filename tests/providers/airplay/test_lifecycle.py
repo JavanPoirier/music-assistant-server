@@ -315,6 +315,35 @@ async def test_a_receiver_with_a_new_random_id_at_every_start_stays_one_player(
     assert config.get_protocol_ids_of_player(player_id) == ["ap10ba7c1b928c"]
 
 
+async def test_a_receiver_with_a_new_random_id_and_address_at_every_start_stays_one_player(
+    scenario: Scenario, provider: AirPlayProvider
+) -> None:
+    """
+    A receiver that comes back under a new random id and address is found by its hardware MAC.
+
+    Most of its random ids look like a hardware MAC address, so only an ARP lookup of its
+    new address finds the MAC it had.
+    """
+    tv = "Android TV"
+    starts = (
+        ("77:CC:F0:48:F2:36", "192.168.1.34"),
+        ("98:A2:44:43:9A:F4", "192.168.1.35"),
+        ("10:BA:7C:1B:92:8C", "192.168.1.36"),
+    )
+    player_id = None
+    for device_id, address in starts:
+        scenario.arp[address] = "48:7E:48:47:2D:2E"
+        protocol = await _announce(scenario, provider, _service(tv, device_id, address))
+        player_id = player_id or _player_of(protocol).player_id
+        assert _player_of(protocol).player_id == player_id
+        await _announce(
+            scenario, provider, _service(tv, device_id, address), ServiceStateChange.Removed
+        )
+
+    assert [config.player_id for config in await scenario.player_configs()] == [player_id]
+    assert scenario.mass.config.get_protocol_ids_of_player(player_id) == ["ap10ba7c1b928c"]
+
+
 async def test_a_new_receiver_of_another_name_on_the_host_of_one_that_is_away_is_new(
     scenario: Scenario, provider: AirPlayProvider
 ) -> None:

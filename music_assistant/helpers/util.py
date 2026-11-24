@@ -2036,7 +2036,9 @@ def normalize_ip_address(ip_address: str | None) -> str | None:
     return ip_address
 
 
-async def resolve_real_mac_address(reported_mac: str | None, ip_address: str | None) -> str | None:
+async def resolve_real_mac_address(
+    reported_mac: str | None, ip_address: str | None, force: bool = False
+) -> str | None:
     """
     Resolve the real MAC address for a device.
 
@@ -2046,13 +2048,14 @@ async def resolve_real_mac_address(reported_mac: str | None, ip_address: str | N
 
     :param reported_mac: The MAC address reported by the protocol.
     :param ip_address: The IP address of the device (for ARP lookup).
+    :param force: Look up the MAC also when the reported MAC looks like a hardware MAC.
     :return: The real MAC address if found, or None if it couldn't be resolved.
     """
     if not ip_address:
         return None
 
     # If no MAC reported or it's a locally administered one, try ARP lookup
-    if not reported_mac or is_locally_administered_mac(reported_mac):
+    if force or not reported_mac or is_locally_administered_mac(reported_mac):
         real_mac = await get_mac_address(ip_address)
         if real_mac and is_valid_mac_address(real_mac):
             return real_mac.upper()
@@ -2063,6 +2066,7 @@ async def resolve_real_mac_address(reported_mac: str | None, ip_address: str | N
 async def enrich_device_mac_address(
     device_info: DeviceInfo,
     logger: logging.Logger | None = None,
+    force_arp: bool = False,
 ) -> None:
     """
     Enrich a player's device_info with a real MAC address via ARP.
@@ -2076,6 +2080,7 @@ async def enrich_device_mac_address(
 
     :param device_info: The player's DeviceInfo to enrich in-place.
     :param logger: Optional logger for debug messages.
+    :param force_arp: Look up the MAC also when the reported MAC looks like a hardware MAC.
     """
     identifiers = device_info.identifiers
     reported_mac = identifiers.get(IdentifierType.MAC_ADDRESS)
@@ -2111,7 +2116,7 @@ async def enrich_device_mac_address(
     # MACs per protocol (DLNA vs AirPlay differ by 1 in the last octet).
     # ARP resolves the true hardware MAC which reliably unifies all protocols.
     # The result is cached in player config so subsequent restarts are fast.
-    real_mac = await resolve_real_mac_address(reported_mac, ip_address)
+    real_mac = await resolve_real_mac_address(reported_mac, ip_address, force=force_arp)
     if real_mac and real_mac.upper() != (reported_mac or "").upper():
         device_info.add_identifier(IdentifierType.MAC_ADDRESS, real_mac)
         if logger:

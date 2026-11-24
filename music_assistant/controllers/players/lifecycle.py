@@ -1115,8 +1115,14 @@ class PlayerLifecycleMixin(_PlayerControllerBase):
 
         # Enrich device MAC address via ARP if needed
         # (handles invalid MACs, locally-administered MACs, and missing MACs)
-        await enrich_device_mac_address(protocol.device_info, self.logger)
-
+        # A device that makes up a new random id at every start can report a random MAC
+        # that looks like a hardware one: look up its MAC when it may be a device that is
+        # away, under a new id.
+        await enrich_device_mac_address(
+            protocol.device_info,
+            self.logger,
+            force_arp=self._may_return_under_new_id(protocol),
+        )
         # Keep the original reported MAC if it differs from the resolved MAC.
         # This enables multi-MAC matching for devices with multiple interfaces
         # (e.g., WiFi + Ethernet) where ARP resolves one interface but the
