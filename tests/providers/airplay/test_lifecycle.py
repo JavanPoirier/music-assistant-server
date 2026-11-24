@@ -340,8 +340,44 @@ async def test_a_receiver_with_a_new_random_id_and_address_at_every_start_stays_
             scenario, provider, _service(tv, device_id, address), ServiceStateChange.Removed
         )
 
+    assert player_id is not None
     assert [config.player_id for config in await scenario.player_configs()] == [player_id]
     assert scenario.mass.config.get_protocol_ids_of_player(player_id) == ["ap10ba7c1b928c"]
+
+
+async def test_a_receiver_with_a_new_random_id_comes_back_to_a_player_from_before_2_11(
+    scenario: Scenario, provider: AirPlayProvider
+) -> None:
+    """
+    The id a player from before the protocols kept their own identifiers stored is no veto.
+
+    Such a player keeps the identifiers of its device on the player, the AirPlay id of the
+    receiver included, which would otherwise rule out every new id the receiver makes up.
+    """
+    tv = "Android TV"
+    scenario.arp["192.168.1.34"] = "48:7E:48:47:2D:2E"
+    first = await _announce(scenario, provider, _service(tv, "77:CC:F0:48:F2:36", "192.168.1.34"))
+    player_id = _player_of(first).player_id
+    await _announce(
+        scenario,
+        provider,
+        _service(tv, "77:CC:F0:48:F2:36", "192.168.1.34"),
+        ServiceStateChange.Removed,
+    )
+    scenario.mass.config.set(
+        f"players/{player_id}/values/device_identifiers",
+        {
+            "mac_address": "77:CC:F0:48:F2:36",
+            "ip_address": "192.168.1.34",
+            "airplay_id": "ap77ccf048f236",
+        },
+    )
+
+    scenario.arp["192.168.1.35"] = "48:7E:48:47:2D:2E"
+    second = await _announce(scenario, provider, _service(tv, "98:A2:44:43:9A:F4", "192.168.1.35"))
+
+    assert _player_of(second).player_id == player_id
+    assert [config.player_id for config in await scenario.player_configs()] == [player_id]
 
 
 async def test_a_new_receiver_of_another_name_on_the_host_of_one_that_is_away_is_new(

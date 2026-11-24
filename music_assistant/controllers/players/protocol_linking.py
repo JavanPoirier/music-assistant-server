@@ -54,6 +54,7 @@ from .base import _PlayerControllerBase
 if TYPE_CHECKING:
     from collections.abc import Collection, Iterable
 
+    from music_assistant.controllers.config.controller import ConfigController
     from music_assistant.models.player_protocol import PlayerProtocol
 
 # How long an audio protocol that matches no player waits for the identifiers that tell
@@ -499,12 +500,15 @@ class ProtocolLinkingMixin(_PlayerControllerBase):
                 player_values = {}
             stored_identifiers = player_values.get(CONF_DEVICE_IDENTIFIERS)
             if isinstance(stored_identifiers, dict) and stored_identifiers:
+                # what the protocols that are left out reported is no part of it either
+                excluded_values = _reported_values(self.mass.config, exclude_protocol_ids)
                 parts.append(
                     DeviceIdentity(
                         identifiers=frozenset(
                             (IdentifierType(identifier_type), str(value))
                             for identifier_type, value in stored_identifiers.items()
                             if identifier_type != IdentifierType.IP_ADDRESS
+                            and str(value) not in excluded_values
                         ),
                         domains=frozenset(domains),
                         native=False,
@@ -822,6 +826,20 @@ class ProtocolLinkingMixin(_PlayerControllerBase):
         """
         await protocol.on_config_updated()
         protocol.update_state(force_update=True)
+
+
+def _reported_values(config: ConfigController, protocol_ids: Collection[str]) -> set[str]:
+    """
+    Return the ids and identifier values that protocols reported, as stored.
+
+    :param config: The config controller that holds the protocol records.
+    :param protocol_ids: Ids of the protocols.
+    """
+    values: set[str] = set(protocol_ids)
+    for protocol_id in protocol_ids:
+        stored = (config.get_protocol_record(protocol_id) or {}).get("values") or {}
+        values.update(str(value) for _, value in stored.get(CONF_PROTOCOL_IDENTIFIERS) or ())
+    return values
 
 
 def _addresses(identifiers: Iterable[tuple[IdentifierType, str]]) -> set[str]:
