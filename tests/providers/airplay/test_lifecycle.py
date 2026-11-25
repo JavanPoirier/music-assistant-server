@@ -374,9 +374,13 @@ async def test_a_receiver_with_a_new_random_id_comes_back_to_a_player_from_befor
     )
 
     scenario.arp["192.168.1.35"] = "48:7E:48:47:2D:2E"
-    second = await _announce(scenario, provider, _service(tv, "98:A2:44:43:9A:F4", "192.168.1.35"))
+    for device_id in ("98:A2:44:43:9A:F4", "E4:35:A5:59:2F:2F"):
+        protocol = await _announce(scenario, provider, _service(tv, device_id, "192.168.1.35"))
+        assert _player_of(protocol).player_id == player_id
+        await _announce(
+            scenario, provider, _service(tv, device_id, "192.168.1.35"), ServiceStateChange.Removed
+        )
 
-    assert _player_of(second).player_id == player_id
     assert [config.player_id for config in await scenario.player_configs()] == [player_id]
 
 

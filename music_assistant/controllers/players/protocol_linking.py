@@ -744,6 +744,22 @@ class ProtocolLinkingMixin(_PlayerControllerBase):
             if key not in (current.get("values") or {}):
                 record["values"].pop(key, None)
         config.set(f"{CONF_PLAYER_PROTOCOLS}/{protocol_id}", deepcopy(record))
+        # a player from before the protocols kept their own identifiers keeps what the old
+        # protocol reported, which would rule out the device the next time it comes back
+        stale = _reported_values(config, (replaced_id,))
+        device_key = f"{CONF_PLAYERS}/{player_id}/values/{CONF_DEVICE_IDENTIFIERS}"
+        device_identifiers = config.get(device_key)
+        if isinstance(device_identifiers, dict) and not stale.isdisjoint(
+            str(value) for value in device_identifiers.values()
+        ):
+            config.set(
+                device_key,
+                {
+                    key: value
+                    for key, value in device_identifiers.items()
+                    if str(value) not in stale
+                },
+            )
         config.remove_protocol_record(replaced_id)
         self._replace_protocol_references(player_id, replaced_id, protocol_id)
         if player := self._players.get(player_id):
