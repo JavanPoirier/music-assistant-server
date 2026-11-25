@@ -235,7 +235,10 @@ class ProtocolLinkingMixin(_PlayerControllerBase):
                 and _native_rank(other_provider) == _native_rank(protocol.provider_id)
             ):
                 return False
-        excluded = {protocol_id} if replaced_id is None else {protocol_id, replaced_id}
+        excluded = {protocol_id}
+        if replaced_id is not None:
+            # an output that rides on the protocol that is replaced reports its id too
+            excluded |= {replaced_id, *self._get_derived_protocol_ids(player_id, replaced_id)}
         return not vetoes_device(
             identity, self._identity_parts(player_id, excluded, attached_only=attached_only)
         )
@@ -421,6 +424,24 @@ class ProtocolLinkingMixin(_PlayerControllerBase):
             other.provider.domain == domain and other is not protocol
             for other in player.attached_protocols.values()
         )
+
+    def _get_derived_protocol_ids(self, player_id: str, protocol_id: str) -> set[str]:
+        """
+        Return the ids of the protocols of a player that ride on a protocol of it.
+
+        :param player_id: Id of the player.
+        :param protocol_id: Id of the protocol they ride on.
+        """
+        derived: set[str] = set()
+        for other_id in self._get_protocol_ids(player_id):
+            if other := self._protocols.get(other_id):
+                underlying_id = other.underlying_protocol_id
+            else:
+                record = self.mass.config.get_protocol_record(other_id) or {}
+                underlying_id = (record.get("values") or {}).get(CONF_UNDERLYING_PLAYER_ID)
+            if underlying_id == protocol_id:
+                derived.add(other_id)
+        return derived
 
     def _get_protocol_ids(self, player_id: str) -> set[str]:
         """

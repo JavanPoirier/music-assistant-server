@@ -384,6 +384,44 @@ async def test_a_receiver_with_a_new_random_id_comes_back_to_a_player_from_befor
     assert [config.player_id for config in await scenario.player_configs()] == [player_id]
 
 
+async def test_a_receiver_with_a_new_random_id_comes_back_past_the_output_riding_on_it(
+    scenario: Scenario, provider: AirPlayProvider
+) -> None:
+    """
+    An output that rides on the protocol a receiver had is no veto when it comes back.
+
+    The Sendspin bridge of an AirPlay receiver stores the AirPlay id it rides on.
+    """
+    tv = "Android TV"
+    scenario.arp[ADDRESS] = "48:7E:48:47:2D:2E"
+    first = await _announce(scenario, provider, _service(tv, "77:CC:F0:48:F2:36"))
+    player_id = _player_of(first).player_id
+    scenario.mass.config.set(
+        "player_protocols/spb_77ccf048f236",
+        {
+            "protocol_id": "spb_77ccf048f236",
+            "provider": "sendspin",
+            "player_id": player_id,
+            "role": "audio",
+            "enabled": True,
+            "default_name": f"{tv} (AirPlay)",
+            "values": {
+                "identifiers": [["airplay_id", "ap77ccf048f236"]],
+                "underlying_player_id": "ap77ccf048f236",
+            },
+        },
+    )
+    # as a restart restores it: the stored output belongs to the player
+    _player_of(first).protocol_ids.add("spb_77ccf048f236")
+    await _announce(
+        scenario, provider, _service(tv, "77:CC:F0:48:F2:36"), ServiceStateChange.Removed
+    )
+
+    second = await _announce(scenario, provider, _service(tv, "41:CE:CA:1A:5C:58"))
+
+    assert _player_of(second).player_id == player_id
+
+
 async def test_a_new_receiver_of_another_name_on_the_host_of_one_that_is_away_is_new(
     scenario: Scenario, provider: AirPlayProvider
 ) -> None:
