@@ -315,6 +315,40 @@ async def test_a_receiver_with_a_new_random_id_at_every_start_stays_one_player(
     assert config.get_protocol_ids_of_player(player_id) == ["ap10ba7c1b928c"]
 
 
+async def test_a_receiver_that_restarts_under_a_new_random_id_without_a_goodbye_stays_one_player(
+    scenario: Scenario, provider: AirPlayProvider
+) -> None:
+    """
+    A receiver that restarts under a new random id before its old records expire keeps its player.
+
+    The old id sends no goodbye, so it still looks online. Its _airplay._tcp record name now
+    carries the new id from the same address: the old id holds that name no longer.
+    """
+    scenario.arp[ADDRESS] = "48:7E:48:47:2D:2E"
+    tv = "Android TV"
+    first = await _announce(scenario, provider, _service(tv, "41:CE:CA:1A:5C:58"))
+    player_id = _player_of(first).player_id
+
+    second = await _announce(scenario, provider, _service(tv, "50:FA:BC:5B:D2:CC"))
+
+    assert _player_of(second).player_id == player_id
+    assert provider.get_player("ap41ceca1a5c58") is None
+    assert [config.player_id for config in await scenario.player_configs()] == [player_id]
+    assert scenario.mass.config.get_protocol_ids_of_player(player_id) == ["ap50fabc5bd2cc"]
+
+
+async def test_a_receiver_of_the_same_name_on_another_host_leaves_the_first_one_alone(
+    scenario: Scenario, provider: AirPlayProvider
+) -> None:
+    """A record of the same name from another address takes no receiver offline."""
+    first = await _announce(scenario, provider, _service("Speaker", "11:22:33:44:55:66"))
+    player_id = _player_of(first).player_id
+    await _announce(scenario, provider, _service("Speaker", "66:55:44:33:22:11", "192.168.1.99"))
+
+    assert provider.get_player("ap112233445566") is first
+    assert _player_of(first).player_id == player_id
+
+
 async def test_a_receiver_with_a_new_random_id_and_address_at_every_start_stays_one_player(
     scenario: Scenario, provider: AirPlayProvider
 ) -> None:

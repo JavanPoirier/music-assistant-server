@@ -1308,6 +1308,7 @@ async def test_setup_player_flags_shairport_on_this_host(
     prov.mass.players.get_protocol.return_value = None
     prov.mass.players.register = AsyncMock()
     prov._is_own_airplay_receiver = AsyncMock(return_value=False)  # type: ignore[method-assign]
+    prov._drop_receiver_restarted_under = AsyncMock()  # type: ignore[method-assign]
     prov._bridge_manager = MagicMock(evaluate_bridge=AsyncMock())
     prov._pair_records = {}
     prov._pair_carriers = {}
@@ -1385,6 +1386,7 @@ async def test_raop_first_setup_takes_the_airplay_record_of_the_device_itself(
     prov.mass.players.get_protocol.return_value = None
     prov.mass.players.register = AsyncMock()
     prov._is_own_airplay_receiver = AsyncMock(return_value=False)  # type: ignore[method-assign]
+    prov._drop_receiver_restarted_under = AsyncMock()  # type: ignore[method-assign]
     prov._get_related_discovery_info = AsyncMock(return_value=None)  # type: ignore[method-assign]
     prov._companion_info_by_address = {}
     prov._mrp_info_by_address = {}

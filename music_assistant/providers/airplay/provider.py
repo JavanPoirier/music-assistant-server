@@ -664,6 +664,8 @@ class AirPlayProvider(PlayerProvider):
             self.mass.config.get_protocol_value(protocol_id, CONF_STORED_VOLUME, FALLBACK_VOLUME)
         )
 
+        await self._drop_receiver_restarted_under(protocol_id, airplay_discovery_info, address)
+
         # Final check before registration to handle race conditions
         # (multiple MDNS events processed in parallel for same device)
         if self.get_protocol(protocol_id):
@@ -820,6 +822,36 @@ class AirPlayProvider(PlayerProvider):
         self.logger.debug("%s is a speaker of a home theater set", speaker.display_name)
         self._on_set_speakers_changed(speaker)
         self._rejoin_set_session(speaker)
+
+    async def _drop_receiver_restarted_under(
+        self, protocol_id: str, airplay_discovery_info: AsyncServiceInfo | None, address: str
+    ) -> None:
+        """
+        Take a receiver offline whose _airplay._tcp record name now carries another id.
+
+        mDNS keeps a service name unique, so a receiver that held the name holds it no longer:
+        it restarted under a new random id (e.g. the AirPlay app of an Android TV) and its
+        old records have not expired yet, as it sent no goodbye. Only a record from the same
+        address counts, and only for a receiver that is a protocol, not a speaker of a set.
+
+        :param protocol_id: Protocol id of the device that advertises the record now.
+        :param airplay_discovery_info: The _airplay._tcp record it advertises.
+        :param address: The address it advertises.
+        """
+        if airplay_discovery_info is None:
+            return
+        old = self._find_by_airplay_name(airplay_discovery_info.name)
+        if (
+            old is None
+            or old.protocol_id == protocol_id
+            or old.protocol_id in self._speakers
+            or old.address != address
+        ):
+            return
+        self.logger.debug("Player offline: %s restarted as %s", old.display_name, protocol_id)
+        await self._bridge_manager.remove_bridge(old.protocol_id)
+        await self.mass.players.unregister(old.protocol_id)
+        self.dashboards.unregister(old.protocol_id)
 
     def _find_by_airplay_name(self, name: str) -> AirPlayPlayer | None:
         """
